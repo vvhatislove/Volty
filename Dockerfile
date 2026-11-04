@@ -8,4 +8,8 @@ COPY src ./src
 COPY migrations ./migrations
 RUN uv sync --locked --no-dev
 
-CMD ["sh", "-c", "uv run --no-sync alembic upgrade head && exec uv run --no-sync volty"]
+RUN useradd --system --no-create-home volty
+USER volty
+ENV PATH="/app/.venv/bin:$PATH"
+
+CMD ["sh", "-c", "alembic upgrade head && exec volty"]
