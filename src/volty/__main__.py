@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 
 from aiogram import Bot
@@ -8,23 +9,25 @@ from volty.bot.dispatcher import build_dispatcher
 from volty.config import Settings
 from volty.crypto import CredentialCipher
 from volty.inverters.pool import ClientPool
-from volty.monitoring.monitor import GridMonitor
+from volty.monitoring.monitor import InverterMonitor
 
 
 async def run(settings: Settings) -> None:
-    engine = create_async_engine(settings.database_url.get_secret_value())
+    engine = create_async_engine(settings.database_url.get_secret_value(), hide_parameters=True)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     cipher = CredentialCipher(settings.encryption_key.get_secret_value())
     pool = ClientPool(cipher)
     bot = Bot(settings.bot_token.get_secret_value())
     dispatcher = build_dispatcher(sessions, pool, cipher)
-    monitor = GridMonitor(bot, sessions, pool, settings.poll_interval_seconds)
+    monitor = InverterMonitor(bot, sessions, pool, settings.poll_interval_seconds)
 
     monitor_task = asyncio.create_task(monitor.run())
     try:
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     finally:
         monitor_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await monitor_task
         await pool.aclose()
         await bot.session.close()
         await engine.dispose()

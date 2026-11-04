@@ -34,6 +34,10 @@ The inverter reports through its Wi-Fi dongle and your router. If the router los
 
 Under **🔔 Notifications** you choose where alerts go for each inverter: direct messages, a group, or both. To use a group, tap **Add to a group** and pick it in Telegram. Under **⚙️ Settings** you can give an inverter a clear name, such as Home.
 
+Under **⚙️ Settings → 🪫 Low battery alert** you set which voltage counts as 100% and 0%, and the charge level for the alert. The bot then works out the charge from this scale everywhere, so it may differ from the LuxPower site. **📊 Summary** shows today's energy and recent outages, and can post them to your group when you press the button.
+
+In a linked group, every member can check the battery and summary with the buttons under alerts, or by sending `/start@your_bot` to get those buttons. Only the owner can change anything, in a private chat with the bot.
+
 To see what your inverter reports, set `LOG_LEVEL=DEBUG` in `.env`. Each poll then logs its status code.
 
 ## Security

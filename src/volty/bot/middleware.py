@@ -2,7 +2,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
+from aiogram.types import CallbackQuery, TelegramObject
 from aiogram.types import User as TelegramUser
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -30,6 +30,10 @@ class ContextMiddleware(BaseMiddleware):
             data["db"] = session
             data["user"] = user
             data["t"] = Translator(user.language)
+            if isinstance(event, CallbackQuery):
+                # Pressing any button abandons a pending text prompt, so that the next message
+                # can't be misread as a new name or a voltage. Flows set their state themselves.
+                await data["state"].clear()
             result = await handler(event, data)
             await session.commit()
             return result

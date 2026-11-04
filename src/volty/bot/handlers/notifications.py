@@ -41,7 +41,7 @@ async def toggle_notifications(
 ) -> None:
     inverter = await get_user_inverter(db, user.telegram_id, callback_data.inverter_id)
     if inverter is None:
-        await callback.answer()
+        await callback.answer(t("common.inverter_gone"))
         return
     inverter.notifications_enabled = not inverter.notifications_enabled
     await db.flush()
@@ -61,7 +61,7 @@ async def unlink_group(
 ) -> None:
     inverter = await get_user_inverter(db, user.telegram_id, callback_data.inverter_id)
     if inverter is None:
-        await callback.answer()
+        await callback.answer(t("common.inverter_gone"))
         return
     inverter.group_chat_id = None
     inverter.group_chat_title = None

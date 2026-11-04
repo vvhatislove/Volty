@@ -2,16 +2,17 @@ import asyncio
 from typing import Any
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from volty.inverters.base import (
     AuthenticationError,
     Credentials,
+    EnergySummary,
     InverterInfo,
     InverterState,
     InverterUnavailableError,
 )
-from volty.inverters.luxpower.models import LoginPayload, RuntimePayload
+from volty.inverters.luxpower.models import EnergyPayload, LoginPayload, RuntimePayload
 
 REGION_URLS = {
     "eu": "https://eu.luxpowertek.com",
@@ -24,6 +25,7 @@ REGION_URLS = {
 
 LOGIN_PATH = "/WManage/api/login"
 RUNTIME_PATH = "/WManage/api/inverter/getInverterRuntime"
+ENERGY_PATH = "/WManage/api/inverter/getInverterEnergyInfo"
 HTTP_TIMEOUT_SECONDS = 20.0
 TRANSIENT_ERROR_MARKERS = ("TIMEOUT", "BUSY", "COMMUNICATION_ERROR")
 
@@ -45,17 +47,23 @@ class LuxpowerClient:
         return self._inverters
 
     async def read_state(self, serial: str) -> InverterState:
-        payload = await self._post_authorized(RUNTIME_PATH, {"serialNum": serial})
-        if not payload.get("success"):
-            raise InverterUnavailableError("LuxPower refused the runtime request")
-        try:
-            return RuntimePayload.model_validate(payload).to_state()
-        except ValidationError:
-            # The validation error embeds the payload, which holds the serial number.
-            raise InverterUnavailableError("Unexpected LuxPower runtime payload") from None
+        return (await self._read(RUNTIME_PATH, serial, RuntimePayload)).to_state()
+
+    async def read_energy(self, serial: str) -> EnergySummary:
+        return (await self._read(ENERGY_PATH, serial, EnergyPayload)).to_summary()
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+    async def _read[ModelT: BaseModel](self, path: str, serial: str, model: type[ModelT]) -> ModelT:
+        payload = await self._post_authorized(path, {"serialNum": serial})
+        if not payload.get("success"):
+            raise InverterUnavailableError("LuxPower refused the request")
+        try:
+            return model.model_validate(payload)
+        except ValidationError:
+            # The validation error embeds the payload, which holds the serial number.
+            raise InverterUnavailableError("Unexpected LuxPower payload") from None
 
     async def _post_authorized(self, path: str, data: dict[str, str]) -> dict[str, Any]:
         if self._session_generation == 0:

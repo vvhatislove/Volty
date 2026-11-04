@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton
 from aiogram.types import ReplyKeyboardMarkup as ReplyKeyboard
@@ -9,14 +9,23 @@ from volty.bot.callbacks import (
     BatteryAction,
     BatteryCallback,
     DisconnectCallback,
+    GroupView,
+    GroupViewCallback,
     LanguageCallback,
+    LowChargeCallback,
+    LowChargeThresholdCallback,
     RegionCallback,
     RenameCallback,
+    SummaryAction,
+    SummaryCallback,
     ToggleNotificationsCallback,
     UnlinkGroupCallback,
+    VoltageScaleCallback,
 )
 from volty.bot.i18n import LANGUAGE_NAMES, Translator
 from volty.storage.models import Account, Inverter
+
+LOW_CHARGE_THRESHOLDS = (10, 20, 30, 40, 50)
 
 
 def _rows(*buttons: InlineKeyboardButton) -> InlineKeyboardMarkup:
@@ -26,8 +35,8 @@ def _rows(*buttons: InlineKeyboardButton) -> InlineKeyboardMarkup:
 def main_keyboard(t: Translator) -> ReplyKeyboard:
     return ReplyKeyboard(
         keyboard=[
-            [KeyboardButton(text=t("menu.battery")), KeyboardButton(text=t("menu.notifications"))],
-            [KeyboardButton(text=t("menu.settings"))],
+            [KeyboardButton(text=t("menu.battery")), KeyboardButton(text=t("menu.summary"))],
+            [KeyboardButton(text=t("menu.notifications")), KeyboardButton(text=t("menu.settings"))],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -114,10 +123,106 @@ def rename_choice_keyboard(t: Translator, inverters: Iterable[Inverter]) -> Inli
     )
 
 
+def group_view_keyboard(
+    t: Translator, inverters: Sequence[Inverter], *, edit: bool = False
+) -> InlineKeyboardMarkup:
+    rows = []
+    for inverter in inverters:
+        prefix = f"{inverter.label}: " if len(inverters) > 1 else ""
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{prefix}{t(key)}",
+                    callback_data=GroupViewCallback(
+                        inverter_id=inverter.id, view=view, edit=edit
+                    ).pack(),
+                )
+                for key, view in (
+                    ("menu.battery", GroupView.BATTERY),
+                    ("menu.summary", GroupView.SUMMARY),
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def summary_keyboard(t: Translator, inverter: Inverter) -> InlineKeyboardMarkup:
+    buttons = [
+        InlineKeyboardButton(
+            text=t("battery.refresh"),
+            callback_data=SummaryCallback(
+                inverter_id=inverter.id, action=SummaryAction.REFRESH
+            ).pack(),
+        )
+    ]
+    if inverter.group_chat_id is not None:
+        buttons.append(
+            InlineKeyboardButton(
+                text=t("summary.to_group"),
+                callback_data=SummaryCallback(
+                    inverter_id=inverter.id, action=SummaryAction.SEND_TO_GROUP
+                ).pack(),
+            )
+        )
+    return _rows(*buttons)
+
+
+def summary_choice_keyboard(inverters: Iterable[Inverter]) -> InlineKeyboardMarkup:
+    return _rows(
+        *(
+            InlineKeyboardButton(
+                text=inverter.label,
+                callback_data=SummaryCallback(
+                    inverter_id=inverter.id, action=SummaryAction.OPEN
+                ).pack(),
+            )
+            for inverter in inverters
+        )
+    )
+
+
+def low_charge_choice_keyboard(inverters: Iterable[Inverter]) -> InlineKeyboardMarkup:
+    return _rows(
+        *(
+            InlineKeyboardButton(
+                text=inverter.label,
+                callback_data=LowChargeCallback(inverter_id=inverter.id).pack(),
+            )
+            for inverter in inverters
+        )
+    )
+
+
+def low_charge_keyboard(t: Translator, inverter: Inverter) -> InlineKeyboardMarkup:
+    scale_button = InlineKeyboardButton(
+        text=t("low_charge.set_scale"),
+        callback_data=VoltageScaleCallback(inverter_id=inverter.id).pack(),
+    )
+    if inverter.battery_scale is None:
+        return _rows(scale_button)
+    thresholds = [
+        InlineKeyboardButton(
+            text=f"✅ {percent}%" if percent == inverter.low_charge_percent else f"{percent}%",
+            callback_data=LowChargeThresholdCallback(
+                inverter_id=inverter.id, percent=percent
+            ).pack(),
+        )
+        for percent in LOW_CHARGE_THRESHOLDS
+    ]
+    disable = InlineKeyboardButton(
+        text=t("low_charge.disable"),
+        callback_data=LowChargeThresholdCallback(inverter_id=inverter.id, percent=0).pack(),
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[thresholds, [disable], [scale_button]])
+
+
 def settings_keyboard(t: Translator) -> InlineKeyboardMarkup:
     return _rows(
         InlineKeyboardButton(text=t("connect.button"), callback_data=callbacks.CONNECT),
         InlineKeyboardButton(text=t("settings.rename"), callback_data=callbacks.RENAME_LIST),
+        InlineKeyboardButton(
+            text=t("settings.low_charge"), callback_data=callbacks.LOW_CHARGE_LIST
+        ),
         InlineKeyboardButton(text=t("settings.language"), callback_data=callbacks.LANGUAGES),
         InlineKeyboardButton(
             text=t("settings.disconnect"), callback_data=callbacks.DISCONNECT_LIST

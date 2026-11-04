@@ -12,7 +12,7 @@ from volty.inverters.base import (
     InverterInfo,
     InverterUnavailableError,
 )
-from volty.inverters.luxpower.client import LOGIN_PATH, RUNTIME_PATH, LuxpowerClient
+from volty.inverters.luxpower.client import ENERGY_PATH, LOGIN_PATH, RUNTIME_PATH, LuxpowerClient
 
 BASE_URL = "https://eu.luxpowertek.com"
 SERIAL = "0000000001"
@@ -196,3 +196,37 @@ async def test_malformed_runtime_error_does_not_leak_payload(client: LuxpowerCli
 
     assert SERIAL not in str(error.value)
     assert error.value.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    ("fields", "load"),
+    [
+        ({"consumptionPower": 700, "peps": 900}, 700),
+        ({"consumptionPower": 0, "peps": 921}, 921),
+        ({"ppv": 500, "pDisCharge": 800, "pCharge": 0, "pToUser": 100, "pToGrid": 50}, 1350),
+    ],
+    ids=["consumption field", "backup output", "energy balance"],
+)
+@respx.mock
+async def test_load_power_uses_best_available_field(
+    client: LuxpowerClient, fields: dict[str, int], load: int
+) -> None:
+    mock_login()
+    payload = load_fixture("runtime_off_grid") | {"pDisCharge": 0} | fields
+    respx.post(f"{BASE_URL}{RUNTIME_PATH}").mock(return_value=httpx.Response(200, json=payload))
+
+    assert (await client.read_state(SERIAL)).load_power == load
+
+
+@respx.mock
+async def test_energy_is_scaled_to_kilowatt_hours(client: LuxpowerClient) -> None:
+    mock_login()
+    respx.post(f"{BASE_URL}{ENERGY_PATH}").mock(
+        return_value=httpx.Response(200, json=load_fixture("energy"))
+    )
+
+    energy = await client.read_energy(SERIAL)
+
+    assert energy.produced == 5.2
+    assert energy.discharged == 2.4
+    assert energy.consumed == 7.0

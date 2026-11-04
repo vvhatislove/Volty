@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.base import BaseSession
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import (
     AnswerCallbackQuery,
     DeleteMessage,
@@ -25,12 +26,34 @@ from aiogram.types import (
     Update,
     User,
 )
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.conftest import FakeClient
-from volty.bot.callbacks import CONNECT, RENAME_LIST, RegionCallback
+from volty.bot.callbacks import (
+    CONNECT,
+    LANGUAGES,
+    LOW_CHARGE_LIST,
+    RENAME_LIST,
+    GroupView,
+    GroupViewCallback,
+    LanguageCallback,
+    LowChargeThresholdCallback,
+    RegionCallback,
+    SummaryAction,
+    SummaryCallback,
+)
 from volty.bot.dispatcher import build_dispatcher
-from volty.bot.handlers import battery, connect, groups, menu, notifications, settings
+from volty.bot.handlers import (
+    battery,
+    connect,
+    groups,
+    low_charge,
+    menu,
+    notifications,
+    settings,
+    summary,
+)
 from volty.crypto import CredentialCipher
 from volty.inverters import Brand
 from volty.inverters.base import (
@@ -42,6 +65,7 @@ from volty.inverters.base import (
 )
 from volty.inverters.pool import ClientPool
 from volty.storage import repository
+from volty.storage.models import Inverter, Outage
 from volty.storage.models import User as VoltyUser
 
 USER_ID = 42
@@ -53,6 +77,8 @@ class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.requests: list[TelegramMethod[Any]] = []
+        self.edit_error: str | None = None
+        self.delete_error: str | None = None
 
     async def close(self) -> None:
         pass
@@ -64,6 +90,10 @@ class RecordingSession(BaseSession):
         timeout: int | None = None,  # noqa: ASYNC109
     ) -> Any:
         self.requests.append(method)
+        if isinstance(method, EditMessageText) and self.edit_error:
+            raise TelegramBadRequest(method, self.edit_error)
+        if isinstance(method, DeleteMessage) and self.delete_error:
+            raise TelegramBadRequest(method, self.delete_error)
         if isinstance(method, GetMe):
             return User(id=1, is_bot=True, first_name="Volty", username="volty_bot")
         if isinstance(method, SendMessage | EditMessageText):
@@ -118,11 +148,11 @@ class Harness:
         await self.dispatcher.feed_update(self.bot, Update(update_id=self.updates, message=message))
         return message.message_id
 
-    async def press(self, data: str) -> None:
-        message = self._message("menu", "private", USER_ID)
+    async def press(self, data: str, chat_type: str = "private", user_id: int = USER_ID) -> None:
+        message = self._message("menu", chat_type, user_id).as_(self.bot)
         callback = CallbackQuery(
-            id="1", from_user=self._user(), chat_instance="x", data=data, message=message
-        )
+            id="1", from_user=self._user(user_id), chat_instance="x", data=data, message=message
+        ).as_(self.bot)
         await self.dispatcher.feed_update(
             self.bot, Update(update_id=self.updates, callback_query=callback)
         )
@@ -151,8 +181,10 @@ def detach_routers() -> Iterator[None]:
         menu.router,
         menu.fallback_router,
         battery.router,
+        summary.router,
         notifications.router,
         settings.router,
+        low_charge.router,
         connect.router,
         groups.router,
     ):
@@ -361,3 +393,261 @@ async def test_removing_the_bot_from_a_group_unlinks_it(harness: Harness) -> Non
     )
 
     assert await _group_chat(harness) is None
+
+
+async def test_voltage_scale_and_threshold_are_saved(harness: Harness) -> None:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+    await harness.press(LOW_CHARGE_LIST)
+    assert "100%" in harness.session.sent_texts()[-1]
+    scale_button = harness.keyboards()[-1].inline_keyboard[-1][0]
+    assert scale_button.callback_data is not None
+    await harness.press(scale_button.callback_data)
+
+    await harness.send("не число")
+    assert "number" in harness.session.sent_texts()[-1]
+    await harness.send("54,5")
+    await harness.send("60")
+    assert "lower" in harness.session.sent_texts()[-1]
+    await harness.send("46")
+    assert "100% = 54.5 V, 0% = 46.0 V" in harness.session.sent_texts()[-1]
+
+    await harness.press(LowChargeThresholdCallback(inverter_id=inverter_id, percent=30).pack())
+    assert "threshold: 30%" in harness.session.sent_texts()[-1]
+    labels = [b.text for b in harness.keyboards()[-1].inline_keyboard[0]]
+    assert "✅ 30%" in labels
+
+    await harness.press(LowChargeThresholdCallback(inverter_id=inverter_id, percent=0).pack())
+    async with harness.sessions() as session:
+        inverter = (await repository.list_user_inverters(session, USER_ID))[0]
+    assert inverter.low_charge_percent is None
+    assert inverter.battery_full_voltage == 54.5
+
+
+async def test_threshold_is_refused_without_a_scale(harness: Harness) -> None:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+
+    await harness.press(LowChargeThresholdCallback(inverter_id=inverter_id, percent=30).pack())
+
+    async with harness.sessions() as session:
+        inverter = (await repository.list_user_inverters(session, USER_ID))[0]
+    assert inverter.low_charge_percent is None
+
+
+async def test_battery_screen_shows_load_and_panels(harness: Harness) -> None:
+    await harness.connect()
+    harness.client.states.append(
+        InverterState(
+            online=True,
+            grid=GridState.OFF_GRID,
+            soc=64,
+            battery_voltage=51.2,
+            load_power=921,
+            pv_power=0,
+        )
+    )
+
+    await harness.send("🔋 Battery")
+
+    assert "Load: 921 W" in harness.session.sent_texts()[-1]
+    assert "Panels: 0 W" in harness.session.sent_texts()[-1]
+
+
+async def test_summary_shows_energy_and_goes_to_group_only_on_button(harness: Harness) -> None:
+    await harness.connect()
+    await harness.send(f"/start@volty_bot {await _inverter_id(harness)}", chat_type="group")
+    harness.session.requests.clear()
+
+    await harness.send("📊 Summary")
+
+    text = harness.session.sent_texts()[-1]
+    assert "Produced: 5.2 kWh" in text
+    assert "No outages" in text
+    sent = [m for m in harness.session.requests if isinstance(m, SendMessage)]
+    assert [m.chat_id for m in sent] == [USER_ID]
+
+    data = SummaryCallback(
+        inverter_id=await _inverter_id(harness), action=SummaryAction.SEND_TO_GROUP
+    )
+    await harness.press(data.pack())
+
+    sent = [m for m in harness.session.requests if isinstance(m, SendMessage)]
+    assert [m.chat_id for m in sent] == [USER_ID, GROUP_ID]
+    assert "Produced: 5.2 kWh" in (sent[-1].text or "")
+
+
+def _answers(harness: Harness) -> list[AnswerCallbackQuery]:
+    return [m for m in harness.session.requests if isinstance(m, AnswerCallbackQuery)]
+
+
+async def _link_group(harness: Harness) -> int:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+    await harness.send(f"/start@volty_bot {inverter_id}", chat_type="group")
+    harness.session.requests.clear()
+    return inverter_id
+
+
+async def test_pressing_the_selected_threshold_again_still_answers(harness: Harness) -> None:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+    async with harness.sessions() as session:
+        inverter = (await repository.list_user_inverters(session, USER_ID))[0]
+        inverter.battery_full_voltage = 54.0
+        inverter.battery_empty_voltage = 46.0
+        await session.commit()
+    harness.session.edit_error = "Bad Request: message is not modified"
+    harness.session.requests.clear()
+
+    await harness.press(LowChargeThresholdCallback(inverter_id=inverter_id, percent=30).pack())
+
+    assert _answers(harness)
+
+
+async def test_language_is_saved_when_old_message_cannot_be_deleted(harness: Harness) -> None:
+    await harness.press(LANGUAGES)
+    harness.session.delete_error = "Bad Request: message can't be deleted"
+
+    await harness.press(LanguageCallback(language="uk").pack())
+
+    assert harness.session.sent_texts()[-1] == "Мову змінено."
+    async with harness.sessions() as session:
+        user = await session.get(VoltyUser, USER_ID)
+    assert user is not None
+    assert user.language == "uk"
+
+
+async def test_stray_text_is_deleted_and_keyboard_restored(harness: Harness) -> None:
+    message_id = await harness.send("possibly a password")
+
+    assert message_id in harness.session.deleted_ids()
+    assert harness.session.sent_texts()[-1] == "Volty is ready. Use the buttons below."
+
+
+async def test_pressing_another_button_abandons_a_rename(harness: Harness) -> None:
+    await harness.connect()
+    await harness.press(RENAME_LIST)
+    await harness.press(LANGUAGES)
+
+    await harness.send("Oops")
+
+    async with harness.sessions() as session:
+        inverter = (await repository.list_user_inverters(session, USER_ID))[0]
+    assert inverter.display_name is None
+
+
+async def test_disconnect_deletes_inverters_and_outages(harness: Harness) -> None:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+    async with harness.sessions() as session:
+        account = (await repository.list_user_accounts(session, USER_ID))[0]
+        await repository.open_outage(session, inverter_id, datetime.now(UTC))
+        await session.commit()
+        assert await repository.delete_user_account(session, USER_ID, account.id)
+        await session.commit()
+
+    async with harness.sessions() as session:
+        assert not (await session.scalars(select(Inverter))).all()
+        assert not (await session.scalars(select(Outage))).all()
+
+
+async def test_any_group_member_can_view_battery(harness: Harness) -> None:
+    inverter_id = await _link_group(harness)
+    harness.client.states.append(
+        InverterState(online=True, grid=GridState.OFF_GRID, soc=64, battery_voltage=51.2)
+    )
+    data = GroupViewCallback(inverter_id=inverter_id, view=GroupView.BATTERY, edit=False)
+
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+
+    assert "Charge: 64%" in harness.session.sent_texts()[-1]
+    sent = [m for m in harness.session.requests if isinstance(m, SendMessage)]
+    assert [m.chat_id for m in sent] == [GROUP_ID]
+    async with harness.sessions() as session:
+        assert await session.get(VoltyUser, OTHER_USER_ID) is None
+
+
+async def test_group_view_edits_panel_and_shows_summary(harness: Harness) -> None:
+    inverter_id = await _link_group(harness)
+    data = GroupViewCallback(inverter_id=inverter_id, view=GroupView.SUMMARY, edit=True)
+
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+
+    edits = [m for m in harness.session.requests if isinstance(m, EditMessageText)]
+    assert "Produced: 5.2 kWh" in (edits[-1].text or "")
+
+
+async def test_button_from_an_unlinked_group_shows_nothing(harness: Harness) -> None:
+    await harness.connect()
+    inverter_id = await _inverter_id(harness)
+    harness.session.requests.clear()
+    data = GroupViewCallback(inverter_id=inverter_id, view=GroupView.SUMMARY, edit=False)
+
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+
+    assert not harness.session.sent_texts()
+    assert _answers(harness)
+
+
+async def test_group_views_have_a_cooldown(harness: Harness) -> None:
+    inverter_id = await _link_group(harness)
+    data = GroupViewCallback(inverter_id=inverter_id, view=GroupView.SUMMARY, edit=False)
+
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+
+    assert len(harness.session.sent_texts()) == 1
+    assert "Try again" in (_answers(harness)[-1].text or "")
+
+
+async def test_start_in_a_group_offers_view_buttons_to_anyone(harness: Harness) -> None:
+    await _link_group(harness)
+
+    await harness.send("/start@volty_bot", chat_type="group", user_id=OTHER_USER_ID)
+
+    assert harness.session.sent_texts()[-1] == "What should I show?"
+    labels = [b.text for b in harness.keyboards()[-1].inline_keyboard[0]]
+    assert labels == ["🔋 Battery", "📊 Summary"]
+
+
+async def test_group_buttons_offer_nothing_that_changes_settings(harness: Harness) -> None:
+    await _link_group(harness)
+
+    await harness.send("/start@volty_bot", chat_type="group", user_id=OTHER_USER_ID)
+
+    for row in harness.keyboards()[-1].inline_keyboard:
+        for button in row:
+            assert (button.callback_data or "").startswith("view:")
+
+
+async def test_group_press_never_logs_in_with_a_rejected_password(harness: Harness) -> None:
+    inverter_id = await _link_group(harness)
+    async with harness.sessions() as session:
+        account = (await repository.list_user_accounts(session, USER_ID))[0]
+        account.needs_reauth = True
+        await session.commit()
+    harness.client.states.append(
+        InverterState(online=True, grid=GridState.OFF_GRID, soc=64, battery_voltage=51.2)
+    )
+    data = GroupViewCallback(inverter_id=inverter_id, view=GroupView.BATTERY, edit=False)
+
+    await harness.press(data.pack(), chat_type="group", user_id=OTHER_USER_ID)
+
+    assert len(harness.client.states) == 1
+    assert "isn't responding" in harness.session.sent_texts()[-1]
+
+
+async def test_unknown_button_in_a_group_is_answered(harness: Harness) -> None:
+    await harness.press("something:old", chat_type="group", user_id=OTHER_USER_ID)
+
+    assert _answers(harness)
+
+
+async def test_stray_text_during_region_prompt_cancels_the_flow(harness: Harness) -> None:
+    await harness.press(CONNECT)
+    login_id = await harness.send("user@example.com")
+    await harness.press(RegionCallback(region="eu").pack())
+
+    assert login_id in harness.session.deleted_ids()
+    assert "Send your LuxPower login" not in harness.session.sent_texts()[-1]

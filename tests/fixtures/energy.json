@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "serialNum": "0000000001",
+  "soc": 71,
+  "todayYielding": 52,
+  "todayCharging": 31,
+  "todayDischarging": 24,
+  "todayImport": 12,
+  "todayExport": 0,
+  "todayUsage": 70,
+  "totalYielding": 170700
+}

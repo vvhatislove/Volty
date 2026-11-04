@@ -1,4 +1,7 @@
+import contextlib
+
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
@@ -10,6 +13,7 @@ from volty.bot.handlers.common import edit_callback_message
 from volty.bot.i18n import LANGUAGE_NAMES, Translator, all_translations
 from volty.bot.keyboards import (
     cancel_keyboard,
+    connect_keyboard,
     disconnect_confirm_keyboard,
     disconnect_list_keyboard,
     language_keyboard,
@@ -54,7 +58,8 @@ async def save_language(
     user.language = callback_data.language
     t = Translator(user.language)
     if isinstance(callback.message, Message):
-        await callback.message.delete()
+        with contextlib.suppress(TelegramBadRequest):
+            await callback.message.delete()
         await callback.message.answer(t("settings.language_saved"), reply_markup=main_keyboard(t))
     await callback.answer()
 
@@ -73,7 +78,7 @@ async def choose_inverter_to_rename(
 ) -> None:
     inverters = await list_user_inverters(db, user.telegram_id)
     if not inverters:
-        await edit_callback_message(callback, t("battery.none"))
+        await edit_callback_message(callback, t("battery.none"), connect_keyboard(t))
     elif len(inverters) == 1:
         await _ask_new_name(callback, inverters[0], state, t)
     else:
@@ -93,7 +98,7 @@ async def start_rename(
 ) -> None:
     inverter = await get_user_inverter(db, user.telegram_id, callback_data.inverter_id)
     if inverter is None:
-        await callback.answer()
+        await callback.answer(t("common.inverter_gone"))
         return
     await _ask_new_name(callback, inverter, state, t)
 
@@ -111,9 +116,11 @@ async def save_name(
     data = await state.get_data()
     await state.clear()
     inverter = await get_user_inverter(db, user.telegram_id, data["inverter_id"])
-    if inverter is not None:
-        inverter.display_name = name
-        await message.answer(t("rename.done", name=name))
+    if inverter is None:
+        await message.answer(t("common.inverter_gone"))
+        return
+    inverter.display_name = name
+    await message.answer(t("rename.done", name=name))
 
 
 @router.callback_query(F.data == callbacks.DISCONNECT_LIST)

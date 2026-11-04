@@ -29,7 +29,8 @@ Volty is an open-source Telegram bot for managing and monitoring solar inverters
 ## Bot UX
 
 - The bot works through buttons. `/start` is the only command, because Telegram requires it.
-- Credentials and settings are handled only in private chats. In a group the bot only links itself when the inverter's owner adds it, and posts alerts.
+- Credentials and settings are handled only in private chats, and only the inverter's owner can change anything.
+- In a linked group, any member can view that inverter's data with buttons. Nothing there changes settings, and each view has a cooldown because it uses the owner's cloud account.
 
 ## Code style
 
@@ -52,6 +53,9 @@ Volty is an open-source Telegram bot for managing and monitoring solar inverters
 
 - Alert only after two consecutive readings confirm a change between grid on and grid off.
 - An offline inverter or an unrecognized status means the grid state is unknown. It never triggers an alert.
+- The low charge alert uses the user's own voltage scale, needs two consecutive low readings, and always shows the voltage.
+- An inverter that stays offline for 5 minutes triggers a connection alert.
+- The daily summary is sent only when the user presses a button, never on a schedule.
 - After the cloud rejects saved credentials on two polls in a row, stop polling that account until the user reconnects, so the cloud doesn't lock it.
 
 ## Inverter control

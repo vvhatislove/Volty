@@ -1,13 +1,14 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from datetime import datetime
+from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from volty.inverters import Brand
 from volty.inverters.base import InverterInfo
-from volty.monitoring.grid import GridTracker
-from volty.storage.models import Account, Inverter, User
+from volty.storage.models import Account, Inverter, Outage, User
 
 
 async def get_or_create_user(session: AsyncSession, telegram_id: int, language: str) -> User:
@@ -112,11 +113,42 @@ async def mark_needs_reauth(session: AsyncSession, account_id: int) -> None:
         account.needs_reauth = True
 
 
-async def save_grid_tracker(session: AsyncSession, inverter_id: int, tracker: GridTracker) -> None:
-    inverter = await session.get(Inverter, inverter_id)
-    if inverter is not None:
-        inverter.grid_state = tracker.confirmed
-        inverter.pending_grid_state = tracker.pending
+async def update_inverter(
+    session: AsyncSession, inverter_id: int, values: Mapping[str, Any]
+) -> None:
+    await session.execute(update(Inverter).where(Inverter.id == inverter_id).values(**values))
+
+
+async def open_outage_start(session: AsyncSession, inverter_id: int) -> datetime | None:
+    return await session.scalar(
+        select(Outage.started_at)
+        .where(Outage.inverter_id == inverter_id, Outage.ended_at.is_(None))
+        .order_by(Outage.started_at.desc())
+    )
+
+
+async def open_outage(session: AsyncSession, inverter_id: int, started_at: datetime) -> None:
+    session.add(Outage(inverter_id=inverter_id, started_at=started_at))
+
+
+async def close_outage(session: AsyncSession, inverter_id: int, ended_at: datetime) -> None:
+    await session.execute(
+        update(Outage)
+        .where(Outage.inverter_id == inverter_id, Outage.ended_at.is_(None))
+        .values(ended_at=ended_at)
+    )
+
+
+async def outages_since(
+    session: AsyncSession, inverter_id: int, since: datetime
+) -> Sequence[Outage]:
+    result = await session.scalars(
+        select(Outage).where(
+            Outage.inverter_id == inverter_id,
+            or_(Outage.ended_at.is_(None), Outage.ended_at >= since),
+        )
+    )
+    return result.all()
 
 
 async def clear_group(session: AsyncSession, chat_id: int) -> None:
@@ -130,4 +162,24 @@ async def clear_group(session: AsyncSession, chat_id: int) -> None:
 async def move_group(session: AsyncSession, chat_id: int, new_chat_id: int) -> None:
     await session.execute(
         update(Inverter).where(Inverter.group_chat_id == chat_id).values(group_chat_id=new_chat_id)
+    )
+
+
+async def list_group_inverters(session: AsyncSession, chat_id: int) -> Sequence[Inverter]:
+    result = await session.scalars(
+        select(Inverter)
+        .where(Inverter.group_chat_id == chat_id)
+        .options(selectinload(Inverter.account).selectinload(Account.user))
+        .order_by(Inverter.id)
+    )
+    return result.all()
+
+
+async def get_group_inverter(
+    session: AsyncSession, chat_id: int, inverter_id: int
+) -> Inverter | None:
+    return await session.scalar(
+        select(Inverter)
+        .where(Inverter.id == inverter_id, Inverter.group_chat_id == chat_id)
+        .options(selectinload(Inverter.account).selectinload(Account.user))
     )

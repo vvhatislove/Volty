@@ -1,4 +1,7 @@
+import contextlib
+
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
@@ -26,7 +29,12 @@ async def start(
 
 
 @fallback_router.message(F.text)
-async def restore_keyboard(message: Message, t: Translator) -> None:
+async def restore_keyboard(message: Message, state: FSMContext, t: Translator) -> None:
+    await state.clear()
+    # The bot only uses buttons, so stray text may be a password sent after a restart lost the
+    # connect flow's state.
+    with contextlib.suppress(TelegramBadRequest):
+        await message.delete()
     await message.answer(t("start.ready"), reply_markup=main_keyboard(t))
 
 

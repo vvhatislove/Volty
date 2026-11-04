@@ -1,8 +1,10 @@
+import logging
+
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from volty.bot import callbacks
@@ -16,6 +18,8 @@ from volty.inverters.base import AuthenticationError, Credentials, InverterUnava
 from volty.inverters.pool import ClientFactory
 from volty.storage.models import User
 from volty.storage.repository import save_account
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -31,6 +35,13 @@ async def _delete_secret_message(message: Message, t: Translator) -> None:
         await message.delete()
     except TelegramBadRequest:
         await message.answer(t("connect.delete_failed"))
+
+
+async def _finish(status: Message, text: str, keyboard: InlineKeyboardMarkup | None = None) -> None:
+    try:
+        await status.edit_text(text, reply_markup=keyboard)
+    except TelegramAPIError as error:
+        logger.warning("Could not update the connect status: %s", type(error).__name__)
 
 
 @router.callback_query(F.data == callbacks.CONNECT)
@@ -90,16 +101,16 @@ async def receive_password(
     try:
         inverters = await client.list_inverters()
     except AuthenticationError:
-        await status.edit_text(t("connect.bad_credentials"), reply_markup=connect_keyboard(t))
+        await _finish(status, t("connect.bad_credentials"), connect_keyboard(t))
         return
     except InverterUnavailableError:
-        await status.edit_text(t("connect.unavailable"), reply_markup=connect_keyboard(t))
+        await _finish(status, t("connect.unavailable"), connect_keyboard(t))
         return
     finally:
         await client.aclose()
 
     if not inverters:
-        await status.edit_text(t("connect.no_inverters"))
+        await _finish(status, t("connect.no_inverters"))
         return
     await save_account(
         db,
@@ -109,5 +120,6 @@ async def receive_password(
         cipher.encrypt(credentials),
         inverters,
     )
+    await db.commit()
     names = ", ".join(inverter.model for inverter in inverters)
-    await status.edit_text(t("connect.success", inverters=names))
+    await _finish(status, t("connect.success", inverters=names))

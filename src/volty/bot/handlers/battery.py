@@ -1,18 +1,17 @@
 from aiogram import Bot, F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from volty.bot.callbacks import BatteryAction, BatteryCallback
-from volty.bot.formatting import battery_text
+from volty.bot.handlers.common import answer_callback, edit_callback_message
 from volty.bot.i18n import Translator, all_translations
 from volty.bot.keyboards import (
     battery_choice_keyboard,
     battery_refresh_keyboard,
     connect_keyboard,
 )
-from volty.inverters.base import AuthenticationError, InverterUnavailableError
+from volty.bot.views import read_battery_text
 from volty.inverters.pool import ClientPool
 from volty.storage.models import Inverter, User
 from volty.storage.repository import get_user_inverter, list_user_inverters
@@ -25,15 +24,7 @@ async def _render(
 ) -> tuple[str, InlineKeyboardMarkup]:
     if inverter.account.needs_reauth:
         return t("error.reauth"), connect_keyboard(t)
-    refresh = battery_refresh_keyboard(t, inverter.id)
-    client = await pool.get(inverter.account)
-    try:
-        state = await client.read_state(inverter.serial)
-    except AuthenticationError, InverterUnavailableError:
-        return t("battery.unavailable"), refresh
-    if not state.online:
-        return t("battery.offline", name=inverter.label), refresh
-    return battery_text(t, inverter, state), refresh
+    return await read_battery_text(inverter, pool, t), battery_refresh_keyboard(t, inverter.id)
 
 
 @router.message(F.text.in_(all_translations("menu.battery")))
@@ -68,19 +59,12 @@ async def battery_button(
 ) -> None:
     inverter = await get_user_inverter(db, user.telegram_id, callback_data.inverter_id)
     if inverter is None:
-        await callback.answer()
+        await answer_callback(callback, t("common.inverter_gone"))
         return
     text, keyboard = await _render(inverter, pool, t)
-    if callback_data.action is BatteryAction.OPEN or not isinstance(callback.message, Message):
+    if callback_data.action is BatteryAction.OPEN:
         # Opening from an alert sends a new message so the alert stays in the chat history.
         await bot.send_message(user.telegram_id, text, reply_markup=keyboard)
-        await callback.answer()
+        await answer_callback(callback)
         return
-    try:
-        await callback.message.edit_text(text, reply_markup=keyboard)
-    except TelegramBadRequest as error:
-        if "message is not modified" not in error.message:
-            raise
-        await callback.answer(t("battery.up_to_date"))
-        return
-    await callback.answer()
+    await edit_callback_message(callback, text, keyboard, t("battery.up_to_date"))

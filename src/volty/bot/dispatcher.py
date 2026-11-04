@@ -3,7 +3,16 @@ from aiogram.enums import ChatType
 from aiogram.fsm.storage.memory import MemoryStorage
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from volty.bot.handlers import battery, connect, groups, menu, notifications, settings
+from volty.bot.handlers import (
+    battery,
+    connect,
+    groups,
+    low_charge,
+    menu,
+    notifications,
+    settings,
+    summary,
+)
 from volty.bot.middleware import ContextMiddleware
 from volty.crypto import CredentialCipher
 from volty.inverters import create_client
@@ -22,6 +31,7 @@ def build_dispatcher(
         cipher=cipher,
         client_factory=client_factory,
         sessions=sessions,
+        cooldown=groups.ViewCooldown(),
     )
     # Credentials are entered as messages, so everything except posting alerts stays private.
     private = Router()
@@ -35,8 +45,10 @@ def build_dispatcher(
     private.include_routers(
         menu.router,
         battery.router,
+        summary.router,
         notifications.router,
         settings.router,
+        low_charge.router,
         connect.router,
         menu.fallback_router,
     )
