@@ -1,0 +1,57 @@
+[project]
+name = "volty"
+version = "0.1.0"
+description = "Telegram bot for monitoring and managing solar inverters"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Vladyslav Petrenko" }]
+requires-python = ">=3.15"
+dependencies = [
+    "aiogram>=3.31,<4",
+    "alembic>=1.20",
+    "asyncpg>=0.32",
+    "cryptography>=50",
+    "httpx>=0.28",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.16",
+    "sqlalchemy[asyncio]>=2.1",
+]
+
+[project.scripts]
+volty = "volty.__main__:main"
+
+[build-system]
+requires = ["uv_build>=0.13,<0.14"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22",
+    "mypy>=2.4",
+    "pytest>=9.2",
+    "pytest-asyncio>=1.4",
+    "respx>=0.23",
+    "ruff>=0.17",
+]
+
+[tool.uv]
+# aiogram 3.31 caps pydantic below 2.14, and only pydantic 2.14+ ships Python 3.15 wheels.
+# aiogram's dev branch already allows it. Remove this override after its next release.
+override-dependencies = ["pydantic>=2.14,<2.15"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "ASYNC", "RUF"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests", "migrations"]
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]

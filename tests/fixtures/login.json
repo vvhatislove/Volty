@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "plants": [
+    {
+      "plantId": 1,
+      "name": "Home",
+      "inverters": [
+        {"serialNum": "0000000001", "deviceTypeText": "LXP-EU 12K", "lost": false}
+      ]
+    }
+  ]
+}

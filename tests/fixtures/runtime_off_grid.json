@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "serialNum": "0000000001",
+  "lost": false,
+  "status": 64,
+  "statusText": "normal",
+  "soc": 64,
+  "vBat": 512,
+  "vacr": 0,
+  "pCharge": 0,
+  "pDisCharge": 820
+}
