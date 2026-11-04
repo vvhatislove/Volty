@@ -72,6 +72,7 @@ Volty is an open-source Telegram bot for managing and monitoring solar inverters
 
 - Use Conventional Commits (`feat:`, `fix:`, `docs:`), with one logical change per commit.
 - Commit or push only when the user asks.
+- A push to `main` deploys to production once CI passes, through `deploy/deploy.sh`. A failed deploy returns to the previous commit, but it doesn't undo database migrations, so keep them compatible with the previous version.
 
 ## Commands
 
