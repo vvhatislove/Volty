@@ -2,7 +2,12 @@
 
 Volty is an open-source Telegram bot for monitoring solar inverters. It tells you when the grid goes down and when it comes back, and shows your battery charge and voltage. You use it with buttons, so there are no commands to remember.
 
-LuxPower is the first supported brand, with data read from its cloud service. Volty only reads data for now and does not change inverter settings.
+Volty reads data from the manufacturer's cloud service. It only reads data for now and does not change inverter settings.
+
+Supported clouds:
+
+- **LuxPower**
+- **HaiPower**, the app for SandiSolar and Aohai inverters. Its cloud has no public API, so Volty signs in through the endpoint the web portal uses for its sample plant, which the vendor may change or close. Tested on one FSC-12K1P-BL-G3 (sold as SandiSolar SD-PRO-EU 12K) with the grid on; outage and offline detection still need confirming on a real inverter.
 
 ## Run your own bot
 
@@ -34,7 +39,7 @@ The inverter reports through its Wi-Fi dongle and your router. If the router los
 
 Under **🔔 Notifications** you choose where alerts go for each inverter: direct messages, a group, or both. To use a group, tap **Add to a group** and pick it in Telegram. Under **⚙️ Settings** you can give an inverter a clear name, such as Home.
 
-Under **⚙️ Settings → 🪫 Low battery alert** you set which voltage counts as 100% and 0%, and the charge level for the alert. The bot then works out the charge from this scale everywhere, so it may differ from the LuxPower site. **📊 Summary** shows today's energy and recent outages, and can post them to your group when you press the button.
+Under **⚙️ Settings → 🪫 Low battery alert** you set which voltage counts as 100% and 0%, and the charge level for the alert. The bot then works out the charge from this scale everywhere, so it may differ from the manufacturer's app. **📊 Summary** shows today's energy and recent outages, and can post them to your group when you press the button.
 
 In a linked group, every member can check the battery and summary with the buttons under alerts, or by sending `/start@your_bot` to get those buttons. Only the owner can change anything, in a private chat with the bot.
 

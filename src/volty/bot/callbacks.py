@@ -2,6 +2,8 @@ from enum import StrEnum
 
 from aiogram.filters.callback_data import CallbackData
 
+from volty.inverters import Brand
+
 CONNECT = "connect"
 CANCEL = "cancel"
 LANGUAGES = "languages"
@@ -67,7 +69,12 @@ class RenameCallback(CallbackData, prefix="rename"):
     inverter_id: int
 
 
+class BrandCallback(CallbackData, prefix="brand"):
+    brand: Brand
+
+
 class RegionCallback(CallbackData, prefix="region"):
+    brand: Brand
     region: str
 
 

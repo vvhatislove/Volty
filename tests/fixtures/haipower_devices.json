@@ -1,0 +1,29 @@
+{
+  "code": 200,
+  "msg": "Success",
+  "data": {
+    "pageNum": 1,
+    "pageSize": 20,
+    "total": 1,
+    "offset": 0,
+    "rows": [
+      {
+        "name": "Home",
+        "csn": "C000000001",
+        "dsn": "D000000001",
+        "addr": 1,
+        "onoff": 1,
+        "status": 1,
+        "status2": "OnGrid",
+        "inverterStatus": 1,
+        "power": 12.0,
+        "type": 3,
+        "deviceType": 3008,
+        "typeName": "FSC-12K1P-BL-G3",
+        "soc": 59.0,
+        "vbat": 54.0,
+        "lastTime": "2026-01-01 12:00:00"
+      }
+    ]
+  }
+}

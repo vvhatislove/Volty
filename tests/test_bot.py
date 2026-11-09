@@ -35,6 +35,7 @@ from volty.bot.callbacks import (
     LANGUAGES,
     LOW_CHARGE_LIST,
     RENAME_LIST,
+    BrandCallback,
     GroupView,
     GroupViewCallback,
     LanguageCallback,
@@ -157,9 +158,15 @@ class Harness:
             self.bot, Update(update_id=self.updates, callback_query=callback)
         )
 
-    async def connect(self, password: str = "secret") -> tuple[int, int]:
+    async def start_connect(self, brand: Brand = Brand.LUXPOWER) -> None:
         await self.press(CONNECT)
-        await self.press(RegionCallback(region="eu").pack())
+        await self.press(BrandCallback(brand=brand).pack())
+        await self.press(RegionCallback(brand=brand, region="eu").pack())
+
+    async def connect(
+        self, password: str = "secret", brand: Brand = Brand.LUXPOWER
+    ) -> tuple[int, int]:
+        await self.start_connect(brand)
         login_id = await self.send("user@example.com")
         password_id = await self.send(password)
         return login_id, password_id
@@ -224,6 +231,32 @@ async def test_connect_deletes_secret_messages_and_stores_encrypted_credentials(
     )
 
 
+async def test_connect_keeps_the_chosen_brand(harness: Harness) -> None:
+    await harness.press(CONNECT)
+    assert "HaiPower" in [row[0].text for row in harness.keyboards()[-1].inline_keyboard]
+
+    await harness.press(BrandCallback(brand=Brand.HAIPOWER).pack())
+    assert "aohaidigitalpower" in harness.keyboards()[-1].inline_keyboard[0][0].text
+    await harness.press(RegionCallback(brand=Brand.HAIPOWER, region="eu").pack())
+    assert "Send your HaiPower login" in harness.session.sent_texts()[-1]
+    await harness.send("user@example.com")
+    await harness.send("secret")
+
+    async with harness.sessions() as session:
+        account = (await repository.list_user_accounts(session, USER_ID))[0]
+    assert account.brand is Brand.HAIPOWER
+
+
+async def test_region_of_another_brand_is_ignored(harness: Harness) -> None:
+    await harness.press(CONNECT)
+    await harness.press(BrandCallback(brand=Brand.HAIPOWER).pack())
+    before = len(harness.session.sent_texts())
+
+    await harness.press(RegionCallback(brand=Brand.HAIPOWER, region="sea").pack())
+
+    assert len(harness.session.sent_texts()) == before
+
+
 async def test_rejected_password_saves_nothing(harness: Harness) -> None:
     async def reject() -> list[InverterInfo]:
         raise AuthenticationError
@@ -239,8 +272,7 @@ async def test_rejected_password_saves_nothing(harness: Harness) -> None:
 
 
 async def test_menu_button_during_connect_is_not_taken_as_login(harness: Harness) -> None:
-    await harness.press(CONNECT)
-    await harness.press(RegionCallback(region="eu").pack())
+    await harness.start_connect()
 
     message_id = await harness.send("🔋 Battery")
 
@@ -249,8 +281,7 @@ async def test_menu_button_during_connect_is_not_taken_as_login(harness: Harness
 
 
 async def test_group_messages_are_ignored(harness: Harness) -> None:
-    await harness.press(CONNECT)
-    await harness.press(RegionCallback(region="eu").pack())
+    await harness.start_connect()
     before = len(harness.session.requests)
 
     await harness.send("my password", chat_type="group")
@@ -646,8 +677,9 @@ async def test_unknown_button_in_a_group_is_answered(harness: Harness) -> None:
 
 async def test_stray_text_during_region_prompt_cancels_the_flow(harness: Harness) -> None:
     await harness.press(CONNECT)
+    await harness.press(BrandCallback(brand=Brand.LUXPOWER).pack())
     login_id = await harness.send("user@example.com")
-    await harness.press(RegionCallback(region="eu").pack())
+    await harness.press(RegionCallback(brand=Brand.LUXPOWER, region="eu").pack())
 
     assert login_id in harness.session.deleted_ids()
     assert "Send your LuxPower login" not in harness.session.sent_texts()[-1]

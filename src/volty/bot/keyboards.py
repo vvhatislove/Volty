@@ -8,6 +8,7 @@ from volty.bot import callbacks
 from volty.bot.callbacks import (
     BatteryAction,
     BatteryCallback,
+    BrandCallback,
     DisconnectCallback,
     GroupView,
     GroupViewCallback,
@@ -23,6 +24,7 @@ from volty.bot.callbacks import (
     VoltageScaleCallback,
 )
 from volty.bot.i18n import LANGUAGE_NAMES, Translator
+from volty.inverters import Brand, brand_regions
 from volty.storage.models import Account, Inverter
 
 LOW_CHARGE_THRESHOLDS = (10, 20, 30, 40, 50)
@@ -51,13 +53,26 @@ def cancel_keyboard(t: Translator) -> InlineKeyboardMarkup:
     return _rows(InlineKeyboardButton(text=t("common.cancel"), callback_data=callbacks.CANCEL))
 
 
-def region_keyboard(t: Translator, regions: Iterable[str]) -> InlineKeyboardMarkup:
+def brand_keyboard(t: Translator) -> InlineKeyboardMarkup:
     return _rows(
         *(
             InlineKeyboardButton(
-                text=t(f"region.{region}"), callback_data=RegionCallback(region=region).pack()
+                text=t(f"brand.{brand}"), callback_data=BrandCallback(brand=brand).pack()
             )
-            for region in regions
+            for brand in Brand
+        ),
+        InlineKeyboardButton(text=t("common.cancel"), callback_data=callbacks.CANCEL),
+    )
+
+
+def region_keyboard(t: Translator, brand: Brand) -> InlineKeyboardMarkup:
+    return _rows(
+        *(
+            InlineKeyboardButton(
+                text=t(f"region.{brand}.{region}"),
+                callback_data=RegionCallback(brand=brand, region=region).pack(),
+            )
+            for region in brand_regions(brand)
         ),
         InlineKeyboardButton(text=t("common.cancel"), callback_data=callbacks.CANCEL),
     )
@@ -247,7 +262,7 @@ def disconnect_list_keyboard(t: Translator, accounts: Iterable[Account]) -> Inli
             InlineKeyboardButton(
                 text=t(
                     "disconnect.account",
-                    region=t(f"region.{account.region}"),
+                    region=t(f"region.{account.brand}.{account.region}"),
                     count=len(account.inverters),
                 ),
                 callback_data=DisconnectCallback(account_id=account.id, confirmed=False).pack(),
