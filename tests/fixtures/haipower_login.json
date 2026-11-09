@@ -1,0 +1,10 @@
+{
+  "code": 200,
+  "msg": "Executed successfully",
+  "data": {
+    "id": 1001,
+    "userId": 2002,
+    "auths": [],
+    "type": 0
+  }
+}
