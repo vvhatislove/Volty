@@ -71,6 +71,8 @@
   "menu.summary": "📊 Summary",
   "battery.load": "🏠 Load: {power} W",
   "battery.pv": "☀️ Panels: {power} W",
+  "battery.grid_voltage": "{grid} · {voltage} V",
+  "battery.output": "⚡ Inverter output: {voltage} V",
   "alert.outage": "⏱ The power was out for {duration}",
   "alert.low_charge": "🪫 Low battery: {name}.\n🔋 {percent}% · {voltage} V (alert threshold {threshold}%)",
   "alert.offline": "📡 {name} has been offline in its cloud for several minutes. If the power went out along with your router, I can't see that.",

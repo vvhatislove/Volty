@@ -89,6 +89,8 @@ async def test_on_grid_state_is_converted_to_watts(client: HaipowerClient) -> No
     assert state.discharge_power == 0
     assert state.load_power == 340
     assert state.pv_power == 0
+    assert state.grid_voltage == 211.1
+    assert state.output_voltage is None
 
 
 @respx.mock

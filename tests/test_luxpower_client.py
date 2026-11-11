@@ -54,6 +54,8 @@ async def test_on_grid_state_is_scaled(client: LuxpowerClient) -> None:
     assert state.grid is GridState.ON_GRID
     assert state.soc == 71
     assert state.battery_voltage == 53.0
+    assert state.grid_voltage == 241.1
+    assert state.output_voltage == 241.0
     assert state.is_charging
 
 
@@ -67,6 +69,8 @@ async def test_off_grid_status_means_no_grid(client: LuxpowerClient) -> None:
     state = await client.read_state(SERIAL)
 
     assert state.grid is GridState.OFF_GRID
+    assert state.grid_voltage is None
+    assert state.output_voltage == 230.0
     assert state.is_discharging
 
 
@@ -82,6 +86,7 @@ async def test_lost_inverter_with_partial_payload_is_unknown(client: LuxpowerCli
     assert not state.online
     assert state.grid is GridState.UNKNOWN
     assert state.soc is None
+    assert state.grid_voltage is None
 
 
 @pytest.mark.parametrize(

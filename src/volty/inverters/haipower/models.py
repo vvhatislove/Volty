@@ -81,6 +81,7 @@ class StatePayload(BaseModel):
             discharge_power=_watts(self.discharge_power),
             load_power=_watts(self.load_power or self.eps_power),
             pv_power=_watts(self.pv_power),
+            grid_voltage=self.grid_voltage or None,
         )
 
     def _grid_state(self) -> GridState:

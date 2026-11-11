@@ -42,6 +42,7 @@ class RuntimePayload(BaseModel):
     soc: int | None = None
     battery_voltage: int | None = Field(default=None, alias="vBat")
     grid_voltage: int | None = Field(default=None, alias="vacr")
+    output_voltage: int | None = Field(default=None, alias="vepsr")
     charge_power: int | None = Field(default=None, alias="pCharge")
     discharge_power: int | None = Field(default=None, alias="pDisCharge")
     pv_power: int | None = Field(default=None, alias="ppv")
@@ -52,11 +53,12 @@ class RuntimePayload(BaseModel):
 
     def to_state(self) -> InverterState:
         logger.debug(
-            "LuxPower runtime: status=%s lost=%s vacr=%s vBat=%s soc=%s ppv=%s peps=%s "
+            "LuxPower runtime: status=%s lost=%s vacr=%s vepsr=%s vBat=%s soc=%s ppv=%s peps=%s "
             "consumption=%s pToUser=%s pToGrid=%s pCharge=%s pDisCharge=%s",
             self.status,
             self.lost,
             self.grid_voltage,
+            self.output_voltage,
             self.battery_voltage,
             self.soc,
             self.pv_power,
@@ -78,6 +80,8 @@ class RuntimePayload(BaseModel):
             discharge_power=self.discharge_power or 0,
             load_power=None if self.lost else self._load_power(),
             pv_power=None if self.lost else self.pv_power or 0,
+            grid_voltage=None if self.lost else _volts(self.grid_voltage),
+            output_voltage=None if self.lost else _volts(self.output_voltage),
         )
 
     def _load_power(self) -> int:
@@ -102,6 +106,11 @@ class RuntimePayload(BaseModel):
         if self.grid_voltage is None or self.grid_voltage / VOLTAGE_SCALE < MIN_GRID_VOLTAGE:
             return GridState.UNKNOWN
         return GridState.ON_GRID
+
+
+def _volts(tenths: int | None) -> float | None:
+    # Zero means the voltage isn't measured, not that it is really zero.
+    return tenths / VOLTAGE_SCALE if tenths else None
 
 
 class EnergyPayload(BaseModel):

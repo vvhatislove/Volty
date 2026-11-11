@@ -71,6 +71,8 @@
   "menu.summary": "📊 Зведення",
   "battery.load": "🏠 Навантаження: {power} Вт",
   "battery.pv": "☀️ Панелі: {power} Вт",
+  "battery.grid_voltage": "{grid} · {voltage} В",
+  "battery.output": "⚡ Вихід інвертора: {voltage} В",
   "alert.outage": "⏱ Світла не було {duration}",
   "alert.low_charge": "🪫 Низький заряд: {name}.\n🔋 {percent}% · {voltage} В (поріг {threshold}%)",
   "alert.offline": "📡 {name} вже кілька хвилин не на зв'язку зі своєю хмарою. Якщо світло зникло разом із роутером, я цього не побачу.",

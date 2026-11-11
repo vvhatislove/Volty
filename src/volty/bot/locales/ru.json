@@ -71,6 +71,8 @@
   "menu.summary": "📊 Сводка",
   "battery.load": "🏠 Нагрузка: {power} Вт",
   "battery.pv": "☀️ Панели: {power} Вт",
+  "battery.grid_voltage": "{grid} · {voltage} В",
+  "battery.output": "⚡ Выход инвертора: {voltage} В",
   "alert.outage": "⏱ Света не было {duration}",
   "alert.low_charge": "🪫 Низкий заряд: {name}.\n🔋 {percent}% · {voltage} В (порог {threshold}%)",
   "alert.offline": "📡 {name} уже несколько минут не на связи со своим облаком. Если свет пропал вместе с роутером, я этого не увижу.",

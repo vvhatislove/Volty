@@ -8,6 +8,8 @@ from volty.storage.models import Inverter
 MISSING_VALUE = "—"
 SECONDS_PER_MINUTE = 60
 MINUTES_PER_HOUR = 60
+# On grid the inverter passes the grid through, so a small difference is measurement noise.
+OUTPUT_VOLTAGE_TOLERANCE = 5.0
 
 
 def _soc(inverter: Inverter, state: InverterState) -> str:
@@ -29,6 +31,19 @@ def _flow(t: Translator, state: InverterState) -> str:
     return t("flow.idle")
 
 
+def _grid(t: Translator, state: InverterState) -> str:
+    grid = t(f"grid.{state.grid.value}")
+    grid_voltage = state.grid_voltage if state.grid is GridState.ON_GRID else None
+    if grid_voltage is not None:
+        grid = t("battery.grid_voltage", grid=grid, voltage=f"{grid_voltage:.0f}")
+    output = state.output_voltage
+    if output is not None and (
+        grid_voltage is None or abs(output - grid_voltage) > OUTPUT_VOLTAGE_TOLERANCE
+    ):
+        grid = f"{grid}\n{t('battery.output', voltage=f'{output:.0f}')}"
+    return grid
+
+
 def format_duration(t: Translator, duration: timedelta) -> str:
     total_minutes = max(1, round(duration.total_seconds() / SECONDS_PER_MINUTE))
     hours, minutes = divmod(total_minutes, MINUTES_PER_HOUR)
@@ -42,7 +57,7 @@ def battery_text(t: Translator, inverter: Inverter, state: InverterState) -> str
         t(
             "battery.status",
             name=inverter.label,
-            grid=t(f"grid.{state.grid.value}"),
+            grid=_grid(t, state),
             soc=_soc(inverter, state),
             voltage=_voltage(state),
             flow=_flow(t, state),

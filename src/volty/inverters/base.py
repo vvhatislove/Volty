@@ -41,6 +41,8 @@ class InverterState:
     discharge_power: int = 0
     load_power: int | None = None
     pv_power: int | None = None
+    grid_voltage: float | None = None
+    output_voltage: float | None = None
 
     @property
     def is_charging(self) -> bool:
